@@ -82,11 +82,12 @@ class MeetingService:
         parser = PydanticOutputParser(pydantic_object=ClarificationResult)
         
         prompt = PromptTemplate(
-            template="""You are an expert startup advisor. Read the following startup pitch.
-Determine if the pitch is missing extremely crucial context required for an AI boardroom to analyze it properly.
-Crucial context includes: Target country/region of launch, Target Audience, and Basic Business/Revenue Model.
-If any of these are fundamentally missing or extremely vague, mark is_ambiguous as true and provide 1-3 specific questions to ask the founder to clarify these points.
-If the pitch is generally understandable, mark is_ambiguous as false.
+            template="""You are an expert startup advisor and a highly practical, skeptical but respectful venture capitalist. 
+Read the following startup pitch. Do not take everything optimistically. Grill the user on the practicality of their approach.
+Analyze the pitch to identify the biggest missing crucial contexts or fundamental flaws required for a boardroom to analyze it properly.
+Generate 1-3 highly specific, dynamic questions tailored to this exact pitch. For example, if they don't specify a revenue model, ask about it. If their technology seems impractical, ask how they will build it. 
+Do not ask generic questions; reference their specific product, name, and claims.
+If the pitch is completely detailed and highly practical, mark is_ambiguous as false. Otherwise, mark is_ambiguous as true and provide the grilling questions.
 
 Title: {title}
 Pitch: {pitch}
@@ -155,98 +156,94 @@ Pitch: {pitch}
         # 3. Instantiate Graph and execute
         graph = create_boardroom_graph(self._checkpointer)
         
-        try:
-            # Run graph to completion
-            final_state = await graph.ainvoke(inputs, config=config)
+    async def save_boardroom_results(self, meeting_id: UUID, final_state: dict, openai_key: str | None = None) -> Meeting:
+        """
+        Parse outputs from a completed graph state and update meeting status to COMPLETED.
+        """
+        meeting = await self._meeting_repo.get_by_id(meeting_id)
+        if not meeting:
+            raise EntityNotFoundException("Meeting", str(meeting_id))
 
-            # 4. Extract outputs and update meeting status
-            meeting.status = MeetingStatus.COMPLETED
-            meeting.completed_at = datetime.utcnow()
+        meeting.status = MeetingStatus.COMPLETED
+        meeting.completed_at = datetime.utcnow()
 
-            # Parse agent outputs from final state
-            agent_outputs = {}
-            for agent_name in AGENT_EXECUTION_ORDER:
-                # Resolve specific output keys from State
-                # moderator -> moderator_output, market_analyst -> market_analysis etc.
-                state_key = self._get_state_key(agent_name)
-                output_content = final_state.get(state_key, "")
+        # Parse agent outputs from final state
+        agent_outputs = {}
+        for agent_name in AGENT_EXECUTION_ORDER:
+            # Resolve specific output keys from State
+            state_key = self._get_state_key(agent_name)
+            output_content = final_state.get(state_key, "")
 
-                # Extract latency and token usage for this node from execution logs
-                prompt_t = 0
-                comp_t = 0
-                latency = 0.0
-                
-                # Fetch latency
-                latencies = final_state.get("node_latencies", [])
-                for lat in latencies:
-                    if lat.get("node") == agent_name:
-                        latency = lat.get("latency_ms", 0.0)
-
-                # Fetch log info
-                logs = final_state.get("execution_log", [])
-                for log in logs:
-                    if log.get("agent") == agent_name:
-                        prompt_t = log.get("prompt_tokens", 0)
-                        comp_t = log.get("completion_tokens", 0)
-
-                agent_outputs[agent_name] = AgentOutput(
-                    agent_name=agent_name,
-                    content=output_content,
-                    tokens_used=prompt_t + comp_t,
-                    prompt_tokens=prompt_t,
-                    completion_tokens=comp_t,
-                    latency_ms=latency,
-                )
-
-            meeting.agent_outputs = agent_outputs
-
-            # Calculate aggregated metrics
-            total_prompt = final_state.get("prompt_tokens", 0)
-            total_comp = final_state.get("completion_tokens", 0)
-            total_tokens = total_prompt + total_comp
+            # Extract latency and token usage for this node from execution logs
+            prompt_t = 0
+            comp_t = 0
+            latency = 0.0
             
-            total_latency = sum(lat.get("latency_ms", 0.0) for lat in final_state.get("node_latencies", []))
-            estimated_cost = estimate_cost("gpt-4o", total_prompt, total_comp)
+            # Fetch latency
+            latencies = final_state.get("node_latencies", [])
+            for lat in latencies:
+                if lat.get("node") == agent_name:
+                    latency = lat.get("latency_ms", 0.0)
 
-            meeting.metrics = MeetingMetrics(
-                total_tokens=total_tokens,
-                prompt_tokens=total_prompt,
-                completion_tokens=total_comp,
-                total_latency_ms=total_latency,
-                estimated_cost=estimated_cost,
-                agents_completed=5,
+            # Fetch log info
+            logs = final_state.get("execution_log", [])
+            for log in logs:
+                if log.get("agent") == agent_name:
+                    prompt_t = log.get("prompt_tokens", 0)
+                    comp_t = log.get("completion_tokens", 0)
+
+            agent_outputs[agent_name] = AgentOutput(
+                agent_name=agent_name,
+                content=output_content,
+                tokens_used=prompt_t + comp_t,
+                prompt_tokens=prompt_t,
+                completion_tokens=comp_t,
+                latency_ms=latency,
             )
 
-            # Populate meeting transcript with structured summaries
-            transcript = []
-            for agent_name in AGENT_EXECUTION_ORDER:
-                out = agent_outputs.get(agent_name)
-                if out:
-                    transcript.append(
-                        TranscriptEntry(
-                            role=agent_name,
-                            content=out.content,
-                        )
+        meeting.agent_outputs = agent_outputs
+
+        # Calculate aggregated metrics
+        total_prompt = final_state.get("prompt_tokens", 0)
+        total_comp = final_state.get("completion_tokens", 0)
+        total_tokens = total_prompt + total_comp
+        
+        total_latency = sum(lat.get("latency_ms", 0.0) for lat in final_state.get("node_latencies", []))
+        estimated_cost = estimate_cost("gpt-4o", total_prompt, total_comp)
+
+        meeting.metrics = MeetingMetrics(
+            total_tokens=total_tokens,
+            prompt_tokens=total_prompt,
+            completion_tokens=total_comp,
+            total_latency_ms=total_latency,
+            estimated_cost=estimated_cost,
+            agents_completed=5,
+        )
+
+        # Populate meeting transcript with structured summaries
+        transcript = []
+        for agent_name in AGENT_EXECUTION_ORDER:
+            out = agent_outputs.get(agent_name)
+            if out:
+                transcript.append(
+                    TranscriptEntry(
+                        role=agent_name,
+                        content=out.content,
                     )
-            meeting.transcript = transcript
-
-            # Index meeting vector for semantic searches
-            if self._search_service:
-                await self._search_service.index_meeting(
-                    meeting_id=meeting.id,
-                    title=meeting.title,
-                    pitch_text=meeting.pitch_text,
-                    api_key=openai_key,
                 )
+        meeting.transcript = transcript
 
-            # Save meeting updates
-            return await self._meeting_repo.save(meeting)
+        # Index meeting vector for semantic searches
+        if self._search_service:
+            await self._search_service.index_meeting(
+                meeting_id=meeting.id,
+                title=meeting.title,
+                pitch_text=meeting.pitch_text,
+                api_key=openai_key,
+            )
 
-        except Exception as e:
-            logger.exception("Failed to run boardroom graph for meeting %s: %s", meeting.id, e)
-            meeting.status = MeetingStatus.FAILED
-            await self._meeting_repo.save(meeting)
-            raise
+        # Save meeting updates
+        return await self._meeting_repo.save(meeting)
 
     def _get_state_key(self, agent_name: str) -> str:
         """Map agent name to its output key in BoardroomState."""

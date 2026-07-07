@@ -131,6 +131,7 @@ export function useMeeting(meetingId?: string) {
   // 3. Auto-start if meeting is in 'created' state
   useEffect(() => {
     if (!meetingId || !meeting || meeting.status !== 'created' || isExecuting) return;
+    if (Object.keys(meeting.agent_outputs || {}).length > 0) return; // Don't restart if we already have outputs
     if (!wsClientRef.current) return;
 
     let intervalId: ReturnType<typeof setInterval> | null = null;

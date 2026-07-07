@@ -22,6 +22,8 @@ from openai import AsyncOpenAI
 from xhtml2pdf import pisa
 from app.application.services.api_key_service import ApiKeyService
 
+
+
 logger = get_logger(__name__)
 settings = get_settings()
 

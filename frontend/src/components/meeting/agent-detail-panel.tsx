@@ -331,7 +331,10 @@ export const AgentDetailPanel: React.FC<AgentDetailPanelProps> = ({
 
   let parsed: any = null;
   try {
-    if (content) parsed = JSON.parse(content);
+    if (content) {
+      const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      parsed = JSON.parse(cleanContent);
+    }
   } catch {
     // not JSON – treat as plaintext
   }
@@ -357,7 +360,7 @@ export const AgentDetailPanel: React.FC<AgentDetailPanelProps> = ({
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.15 }}
       >
         <Card className="overflow-hidden">
           {/* Header */}
@@ -399,8 +402,8 @@ export const AgentDetailPanel: React.FC<AgentDetailPanelProps> = ({
               <span className="text-sm">Waiting for agent to complete…</span>
             </div>
           ) : isStreaming ? (
-            <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              <StreamingText text={content} speed={18} />
+            <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-mono whitespace-pre-wrap">
+              <StreamingText text={content.replace(/```json\n?|```\n?/g, '')} speed={10} />
             </div>
           ) : showRaw ? (
             <pre className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap overflow-x-auto font-mono bg-slate-50 dark:bg-gray-900/50 p-4 rounded-xl">

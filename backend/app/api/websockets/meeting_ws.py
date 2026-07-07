@@ -141,8 +141,12 @@ async def run_boardroom_execution(
                         "agent": next_node,
                     })
 
+        # Fetch the final computed state to persist
+        state_wrapper = await graph.aget_state(config)
+        final_state = state_wrapper.values
+        
         # Persist and broadcast final metrics
-        completed_meeting = await meeting_service.execute_boardroom(m_uuid)
+        completed_meeting = await meeting_service.save_boardroom_results(m_uuid, final_state, openai_key)
         metrics = completed_meeting.metrics
         await websocket.send_json({
             "type": WSEventType.MEETING_COMPLETED,
@@ -175,12 +179,19 @@ async def meeting_websocket(websocket: WebSocket, meeting_id: str, token: str | 
         
         # Authenticate WS connection
         if token and secret:
+            from supabase import create_client
+            import asyncio
             try:
-                payload = jwt.decode(token, secret, algorithms=["HS256"], options={"verify_aud": False})
-                user_id_str = payload.get("sub")
-                if user_id_str:
-                    user_id = UUID(user_id_str)
-            except JWTError:
+                supabase_url = settings.supabase_url
+                supabase_anon_key = settings.supabase_anon_key.get_secret_value()
+                supabase_client = create_client(supabase_url, supabase_anon_key)
+                response = await asyncio.to_thread(supabase_client.auth.get_user, token)
+                if response and response.user:
+                    user_id = UUID(response.user.id)
+                else:
+                    raise Exception("No user found in token.")
+            except Exception as e:
+                logger.error(f"WS Auth Error: {e}")
                 await websocket.send_json({"type": WSEventType.ERROR, "error": "Invalid authentication token."})
                 await websocket.close()
                 return

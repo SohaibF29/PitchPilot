@@ -130,9 +130,9 @@ export default function LandingPage() {
               <form onSubmit={handleStartPitch} className="space-y-6 mt-4">
                 {clarificationQuestions.length > 0 ? (
                   <div className="space-y-4">
-                    <div className="bg-indigo-950/20 border border-indigo-900/40 p-4 rounded-xl">
-                      <h3 className="text-sm font-bold text-indigo-400 mb-2">Wait! We need some clarity before starting the boardroom:</h3>
-                      <ul className="list-disc pl-5 text-sm text-indigo-300 space-y-1">
+                    <div className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-950/30 dark:border-indigo-800/50 p-4 rounded-xl">
+                      <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-2">Wait! We need some clarity before starting the boardroom:</h3>
+                      <ul className="list-disc pl-5 text-sm text-indigo-800 dark:text-indigo-200 space-y-1">
                         {clarificationQuestions.map((q, idx) => (
                           <li key={idx}>{q}</li>
                         ))}
@@ -156,7 +156,14 @@ export default function LandingPage() {
                         Cancel
                       </Button>
                       <Button type="submit" disabled={isSubmitting} className="w-2/3">
-                        {isSubmitting ? 'Entering Boardroom...' : '🚀 Submit Clarifications'}
+                        {isSubmitting ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                            <span>Entering Boardroom...</span>
+                          </div>
+                        ) : (
+                          '🚀 Submit Clarifications'
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -191,7 +198,14 @@ export default function LandingPage() {
                     </div>
 
                     <Button type="submit" disabled={isSubmitting} className="w-full py-3">
-                      {isSubmitting ? 'Analyzing Pitch...' : '🚀 Submit Startup Pitch'}
+                      {isSubmitting ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          <span>Checking pitch for clarity...</span>
+                        </div>
+                      ) : (
+                        '🚀 Submit Startup Pitch'
+                      )}
                     </Button>
                   </>
                 )}

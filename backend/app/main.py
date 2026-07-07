@@ -84,9 +84,14 @@ app.mount("/static", StaticFiles(directory="public"), name="static")
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    
+    workers = 1 if settings.is_development else multiprocessing.cpu_count()
+    
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=settings.is_development,
+        workers=workers,
     )

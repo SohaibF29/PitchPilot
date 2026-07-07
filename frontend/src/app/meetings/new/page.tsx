@@ -50,20 +50,22 @@ const TranscriptBubble: React.FC<{
   // Parse JSON content to extract a short preview
   let preview = content;
   try {
-    const parsed = JSON.parse(content);
+    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(cleanContent);
     const firstVal = Object.values(parsed)[0];
     if (typeof firstVal === 'string') preview = firstVal.slice(0, 200) + (firstVal.length > 200 ? '…' : '');
     else if (parsed.feedback) preview = parsed.feedback;
-    else preview = content.slice(0, 200) + (content.length > 200 ? '…' : '');
+    else preview = cleanContent.slice(0, 200) + (cleanContent.length > 200 ? '…' : '');
   } catch {
-    preview = content.slice(0, 200) + (content.length > 200 ? '…' : '');
+    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    preview = cleanContent.slice(0, 200) + (cleanContent.length > 200 ? '…' : '');
   }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.15 }}
       className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
     >
       <div className="flex items-center gap-2 mb-1.5 px-1">
@@ -144,8 +146,9 @@ function MeetingDashboardContent() {
     try {
       await api.generateReport(meetingId);
       setReportReady(true);
-    } catch {
-      // silently fail – user can try manually
+      setError(null);
+    } catch (err: any) {
+      setError(`Failed to generate report: ${err.message}`);
     } finally {
       setIsGeneratingReport(false);
     }

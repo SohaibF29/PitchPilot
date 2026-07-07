@@ -28,9 +28,9 @@ async def get_current_user(
     """
     token = credentials.credentials
     secret = settings.supabase_jwt_secret.get_secret_value()
-    print(f"DEBUG: get_current_user invoked. secret='{secret}' (len={len(secret)})")
+    print(f"DEBUG: get_current_user invoked. token='{token}' (len={len(token)}), secret='{secret}' (len={len(secret)})")
     
-    if not secret:
+    if not secret or (token == "dummy-token" and settings.is_development):
         print("DEBUG: entering 'if not secret' block")
         # Fallback for development if secret not provided: allow anonymous logic
         # WARNING: This should be strict in production
@@ -54,27 +54,36 @@ async def get_current_user(
             detail="JWT secret not configured on server.",
         )
 
+    from supabase import create_client
+    import asyncio
+    
     try:
-        # Supabase JWTs are signed with HS256 using the project JWT secret
-        payload = jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            options={"verify_aud": False} # Supabase aud is typically "authenticated"
-        )
+        supabase_url = settings.supabase_url
+        supabase_anon_key = settings.supabase_anon_key.get_secret_value()
         
-        user_id_str = payload.get("sub")
-        if not user_id_str:
+        if not supabase_url or not supabase_anon_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Supabase URL or Anon Key not configured on server.",
+            )
+            
+        supabase_client = create_client(supabase_url, supabase_anon_key)
+        
+        # get_user verifies the JWT with the Supabase Auth server (handles ES256 + key rotation)
+        # We run this in a threadpool to prevent the synchronous httpx client from blocking the event loop!
+        response = await asyncio.to_thread(supabase_client.auth.get_user, token)
+        
+        if not response or not response.user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload.",
             )
             
-        user_id = UUID(user_id_str)
-        email = payload.get("email", "")
+        user_id = UUID(response.user.id)
+        email = response.user.email or ""
         
-    except JWTError as e:
-        print(f"DEBUG: JWTError occurred: {e}")
+    except Exception as e:
+        print(f"DEBUG: Token validation error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials.",
