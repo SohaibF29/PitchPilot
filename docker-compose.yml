@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Database container with pgvector extension enabled
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pitchpilot-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pitchpilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pitchpilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # In-memory Redis container for local dev cache overrides
+  redis:
+    image: redis:7-alpine
+    container_name: pitchpilot-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend FastAPI development container
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pitchpilot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_DATABASE_URL=postgresql://postgres:password@postgres:5432/pitchpilot
+      - UPSTASH_REDIS_REST_URL=http://redis:6379
+      - APP_ENV=development
+      - DEBUG=true
+    volumes:
+      - ./backend/app:/app/app
+      - ./public:/app/public
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PitchPilot Boardroom Assessment Report</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm 15mm 20mm 15mm;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #2D3748;
+            line-height: 1.6;
+            font-size: 11pt;
+        }
+
+        h1, h2, h3, h4 {
+            color: #1A365D;
+            font-weight: 700;
+        }
+
+        h1 {
+            font-size: 26pt;
+            border-bottom: 2px solid #3182CE;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        h2 {
+            font-size: 18pt;
+            border-bottom: 1px solid #E2E8F0;
+            padding-bottom: 6px;
+            margin-top: 30px;
+            page-break-after: avoid;
+        }
+
+        .cover-page {
+            page-break-after: always;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding-top: 50mm;
+        }
+
+        .cover-title {
+            font-size: 32pt;
+            color: #1A365D;
+            margin-bottom: 10px;
+            font-weight: 800;
+        }
+
+        .cover-subtitle {
+            font-size: 18pt;
+            color: #4A5568;
+            margin-bottom: 40px;
+        }
+
+        .cover-metadata {
+            margin-top: auto;
+            border-top: 2px solid #E2E8F0;
+            padding-top: 20px;
+            font-size: 12pt;
+            color: #718096;
+        }
+
+        .section-box {
+            background-color: #F7FAFC;
+            border-left: 4px solid #3182CE;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .swot-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        .swot-cell {
+            background-color: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            padding: 15px;
+            border-radius: 6px;
+        }
+
+        .swot-cell h4 {
+            margin-top: 0;
+            font-size: 12pt;
+            border-bottom: 1px solid #CBD5E0;
+            padding-bottom: 5px;
+        }
+
+        .swot-s h4 { color: #2F855A; }
+        .swot-w h4 { color: #C53030; }
+        .swot-o h4 { color: #B7791F; }
+        .swot-t h4 { color: #2B6CB0; }
+
+        .metrics-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            margin-bottom: 25px;
+        }
+
+        .metrics-table th, .metrics-table td {
+            border: 1px solid #E2E8F0;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .metrics-table th {
+            background-color: #EDF2F7;
+            color: #2D3748;
+        }
+
+        .rating-badge {
+            background-color: #3182CE;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 10pt;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Cover Page -->
+    <div class="cover-page">
+        <div class="cover-title">PitchPilot</div>
+        <div class="cover-subtitle">Boardroom Startup Assessment Report</div>
+        <div style="font-size: 16pt; margin-bottom: 10px; font-weight: bold;">Project: {{ meeting.title }}</div>
+        <div class="cover-metadata">
+            <p><strong>Generated on:</strong> {{ generated_at }}</p>
+            <p><strong>Orchestrated by:</strong> LangGraph Boardroom Pipeline</p>
+        </div>
+    </div>
+
+    <!-- Executive Summary -->
+    <h2>Executive Summary</h2>
+    <div class="section-box">
+        <p>{{ sections.executive_summary }}</p>
+    </div>
+
+    <!-- Market Infographic / Statistics Visual -->
+    {% if chart_path %}
+    <h2>Market Visual Analysis</h2>
+    <div style="text-align: center; margin-top: 15px; margin-bottom: 25px;">
+        <img src="{{ chart_path }}" style="width: 400px; height: 400px; border-radius: 8px; border: 1px solid #E2E8F0;" />
+    </div>
+    {% endif %}
+
+    <!-- SWOT Analysis -->
+    <h2>SWOT Analysis</h2>
+    <table class="swot-table" style="width: 100%; border-collapse: separate; border-spacing: 15px; margin-top: 20px; margin-bottom: 20px;">
+        <tr>
+            <td class="swot-cell swot-s" style="width: 50%; vertical-align: top; background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 6px;">
+                <h4 style="color: #2F855A; margin-top: 0; font-size: 12pt; border-bottom: 1px solid #CBD5E0; padding-bottom: 5px;">Strengths</h4>
+                <p>High core technical feasibility, strong initial value alignment.</p>
+            </td>
+            <td class="swot-cell swot-w" style="width: 50%; vertical-align: top; background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 6px;">
+                <h4 style="color: #C53030; margin-top: 0; font-size: 12pt; border-bottom: 1px solid #CBD5E0; padding-bottom: 5px;">Weaknesses</h4>
+                <p>Customer acquisition complexity, target audience definition gaps.</p>
+            </td>
+        </tr>
+        <tr>
+            <td class="swot-cell swot-o" style="width: 50%; vertical-align: top; background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 6px;">
+                <h4 style="color: #B7791F; margin-top: 0; font-size: 12pt; border-bottom: 1px solid #CBD5E0; padding-bottom: 5px;">Opportunities</h4>
+                <p>Expansion into enterprise markets, integration of automated workflows.</p>
+            </td>
+            <td class="swot-cell swot-t" style="width: 50%; vertical-align: top; background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 6px;">
+                <h4 style="color: #2B6CB0; margin-top: 0; font-size: 12pt; border-bottom: 1px solid #CBD5E0; padding-bottom: 5px;">Threats</h4>
+                <p>Aggressive competitive positioning by established industry incumbents.</p>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Market Analysis -->
+    <h2>Market Analysis & Opportunity</h2>
+    <p>{{ sections.market_analysis }}</p>
+
+    <!-- MVP & Roadmap -->
+    <h2>Product & MVP Roadmap</h2>
+    <p>{{ sections.mvp_recommendation }}</p>
+
+    <!-- Revenue & Financials -->
+    <h2>Revenue Model & Financial Review</h2>
+    <p>{{ sections.revenue_model }}</p>
+
+    <!-- Technical Review -->
+    <h2>Technical & Architecture Review</h2>
+    <p>{{ sections.technical_review }}</p>
+
+    <!-- Overall Assessment -->
+    <h2>Boardroom Final Recommendation</h2>
+    <div class="section-box" style="border-left-color: #2F855A; background-color: #F0FFF4;">
+        <p><strong>Final Verdict:</strong> {{ sections.final_recommendation }}</p>
+    </div>
+
+    <!-- Diagnostics -->
+    <h2>Diagnostics & Execution Metrics</h2>
+    <table class="metrics-table">
+        <tr>
+            <th>Diagnostic Indicator</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Total Latency</td>
+            <td>{{ (meeting.metrics.total_latency_ms / 1000) | round(2) }} seconds</td>
+        </tr>
+        <tr>
+            <td>Total Tokens Consumed</td>
+            <td>{{ meeting.metrics.total_tokens }} tokens</td>
+        </tr>
+        <tr>
+            <td>Prompt / Completion Tokens</td>
+            <td>{{ meeting.metrics.prompt_tokens }} / {{ meeting.metrics.completion_tokens }}</td>
+        </tr>
+        <tr>
+            <td>Estimated API Execution Cost</td>
+            <td>${{ meeting.metrics.estimated_cost }}</td>
+        </tr>
+    </table>
+
+</body>
+</html>

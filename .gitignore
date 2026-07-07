@@ -1,0 +1,23 @@
+# Deployment Guides
+Render_Deployment_Guide.md
+Vercel_Deployment_Guide.md
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+.pytest_cache/
+
+# OS generated files
+.DS_Store
+Thumbs.db
