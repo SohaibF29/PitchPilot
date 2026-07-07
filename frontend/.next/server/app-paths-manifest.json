@@ -1,5 +1,5 @@
 {
   "/page": "app/page.js",
-  "/settings/api-keys/page": "app/settings/api-keys/page.js",
-  "/auth/page": "app/auth/page.js"
+  "/auth/page": "app/auth/page.js",
+  "/settings/api-keys/page": "app/settings/api-keys/page.js"
 }
