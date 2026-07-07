@@ -11,6 +11,7 @@ import { GraphVisualizer } from '@/components/observability/graph-visualizer';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -109,6 +110,9 @@ function MeetingDashboardContent() {
   const [reportReady, setReportReady] = useState(false);
   const [steeringInput, setSteeringInput] = useState('');
   const [steeringSent, setSteeringSent] = useState(false);
+  
+  const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title: string; description: string; isAlert: boolean; onConfirm: () => void } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
@@ -159,13 +163,30 @@ function MeetingDashboardContent() {
     window.open(`${API_BASE}/api/reports/${meetingId}/download`, '_blank');
   };
 
-  const handleDeleteMeeting = async () => {
-    if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+  const confirmDeleteMeeting = () => {
+    setModalConfig({
+      isOpen: true,
+      title: 'Delete Session',
+      description: 'Are you sure you want to delete this session? This cannot be undone.',
+      isAlert: false,
+      onConfirm: performDeleteMeeting
+    });
+  };
+
+  const performDeleteMeeting = async () => {
+    setIsDeleting(true);
     try {
       await api.deleteMeeting(meetingId);
       router.push('/');
     } catch (err: any) {
-      alert(`Failed to delete meeting: ${err.message}`);
+      setModalConfig({
+        isOpen: true,
+        title: 'Error',
+        description: `Failed to delete meeting: ${err.message}`,
+        isAlert: true,
+        onConfirm: () => setModalConfig(null)
+      });
+      setIsDeleting(false);
     }
   };
 
@@ -192,6 +213,17 @@ function MeetingDashboardContent() {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal
+        isOpen={!!modalConfig?.isOpen}
+        title={modalConfig?.title || ''}
+        description={modalConfig?.description || ''}
+        isAlert={modalConfig?.isAlert}
+        isLoading={isDeleting}
+        confirmText={modalConfig?.isAlert ? 'OK' : 'Delete'}
+        onConfirm={() => modalConfig?.onConfirm()}
+        onCancel={() => setModalConfig(null)}
+      />
+      
       {/* ── Page header ── */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -210,7 +242,7 @@ function MeetingDashboardContent() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={handleDeleteMeeting} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 gap-2 border-red-200 dark:border-red-900/50">
+          <Button variant="secondary" onClick={confirmDeleteMeeting} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 gap-2 border-red-200 dark:border-red-900/50">
             🗑️ Delete Session
           </Button>
           {isCompleted && (

@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/auth-provider';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 
 let cachedMeetings: any[] | null = null;
 
@@ -20,6 +21,9 @@ export default function LandingPage() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState('');
+
+  const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title: string; description: string; isAlert: boolean; onConfirm: () => void; idToDelete?: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch past pitches and check backend health
   useEffect(() => {
@@ -83,27 +87,64 @@ export default function LandingPage() {
       router.push(`/meetings/new?id=${data.id}`);
     } catch (err) {
       console.error(err);
-      alert('Failed to submit pitch.');
+      setModalConfig({
+        isOpen: true,
+        title: 'Error',
+        description: 'Failed to submit pitch.',
+        isAlert: true,
+        onConfirm: () => setModalConfig(null)
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteMeeting = async (id: string, e: React.MouseEvent) => {
+  const confirmDeleteMeeting = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+    setModalConfig({
+      isOpen: true,
+      title: 'Delete Session',
+      description: 'Are you sure you want to delete this session? This cannot be undone.',
+      isAlert: false,
+      onConfirm: () => performDeleteMeeting(id),
+      idToDelete: id
+    });
+  };
+
+  const performDeleteMeeting = async (id: string) => {
+    setIsDeleting(true);
     try {
       await api.deleteMeeting(id);
       const filtered = meetings.filter(m => m.id !== id);
       setMeetings(filtered);
       cachedMeetings = filtered;
+      setModalConfig(null);
     } catch (err: any) {
-      alert(`Failed to delete meeting: ${err.message}`);
+      setModalConfig({
+        isOpen: true,
+        title: 'Error',
+        description: `Failed to delete meeting: ${err.message}`,
+        isAlert: true,
+        onConfirm: () => setModalConfig(null)
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   return (
     <div className={`space-y-12 ${!user && !authLoading ? 'flex flex-col justify-center min-h-[75vh]' : ''}`}>
+      <ConfirmModal
+        isOpen={!!modalConfig?.isOpen}
+        title={modalConfig?.title || ''}
+        description={modalConfig?.description || ''}
+        isAlert={modalConfig?.isAlert}
+        isLoading={isDeleting}
+        confirmText={modalConfig?.isAlert ? 'OK' : 'Delete'}
+        onConfirm={() => modalConfig?.onConfirm()}
+        onCancel={() => setModalConfig(null)}
+      />
+      
       {/* Hero Section */}
       <section className="text-center space-y-4 max-w-3xl mx-auto pt-8">
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-foreground">
@@ -256,7 +297,7 @@ export default function LandingPage() {
                         </p>
                       </div>
                       <button
-                        onClick={(e) => handleDeleteMeeting(meeting.id, e)}
+                        onClick={(e) => confirmDeleteMeeting(meeting.id, e)}
                         className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors p-1.5 rounded-md shrink-0 flex items-center justify-center"
                         title="Delete Session"
                       >
