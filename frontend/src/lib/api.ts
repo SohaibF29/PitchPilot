@@ -58,6 +58,7 @@ export async function apiRequest<T = any>(
 export const api = {
   getMeetings: () => apiRequest<any[]>('/api/meetings'),
   getMeeting: (id: string) => apiRequest<any>(`/api/meetings/${id}`),
+  deleteMeeting: (id: string) => apiRequest<void>(`/api/meetings/${id}`, { method: 'DELETE' }),
   createMeeting: (title: string, pitchText: str) =>
     apiRequest<any>('/api/meetings', {
       method: 'POST',

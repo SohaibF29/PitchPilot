@@ -1,6 +1,6 @@
 {
-  "/settings/api-keys/page": "app/settings/api-keys/page.js",
   "/page": "app/page.js",
-  "/auth/page": "app/auth/page.js",
-  "/meetings/new/page": "app/meetings/new/page.js"
+  "/settings/api-keys/page": "app/settings/api-keys/page.js",
+  "/meetings/new/page": "app/meetings/new/page.js",
+  "/auth/page": "app/auth/page.js"
 }

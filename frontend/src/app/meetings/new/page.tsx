@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Suspense, useState, useRef, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMeeting } from '@/hooks/use-meeting';
 import { AgentGrid } from '@/components/meeting/agent-grid';
@@ -100,6 +100,7 @@ const TranscriptBubble: React.FC<{
 
 // ── Main dashboard ─────────────────────────────────────────────────────
 function MeetingDashboardContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const meetingId = searchParams.get('id') || '';
 
@@ -158,6 +159,16 @@ function MeetingDashboardContent() {
     window.open(`${API_BASE}/api/reports/${meetingId}/download`, '_blank');
   };
 
+  const handleDeleteMeeting = async () => {
+    if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+    try {
+      await api.deleteMeeting(meetingId);
+      router.push('/');
+    } catch (err: any) {
+      alert(`Failed to delete meeting: ${err.message}`);
+    }
+  };
+
   const handleSteering = () => {
     if (!steeringInput.trim()) return;
     const sent = sendSteering(steeringInput.trim());
@@ -199,6 +210,9 @@ function MeetingDashboardContent() {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={handleDeleteMeeting} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 gap-2 border-red-200 dark:border-red-900/50">
+            🗑️ Delete Session
+          </Button>
           {isCompleted && (
             <>
               {isGeneratingReport && (

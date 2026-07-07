@@ -7,13 +7,15 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/auth-provider';
 
+let cachedMeetings: any[] | null = null;
+
 export default function LandingPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [meetings, setMeetings] = useState<any[]>([]);
+  const [meetings, setMeetings] = useState<any[]>(cachedMeetings || []);
   const [title, setTitle] = useState('');
   const [pitch, setPitch] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!cachedMeetings);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
@@ -23,9 +25,10 @@ export default function LandingPage() {
   useEffect(() => {
     const fetchHistory = async () => {
       if (!user) return;
-      setIsLoading(true);
+      if (!cachedMeetings) setIsLoading(true);
       try {
         const data = await api.getMeetings();
+        cachedMeetings = data;
         setMeetings(data);
       } catch (err) {
         console.error(err);
@@ -74,12 +77,28 @@ export default function LandingPage() {
       }
       
       const data = await api.createMeeting(title, finalPitch);
+      if (cachedMeetings) {
+        cachedMeetings = [data, ...cachedMeetings];
+      }
       router.push(`/meetings/new?id=${data.id}`);
     } catch (err) {
       console.error(err);
       alert('Failed to submit pitch.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteMeeting = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this session? This cannot be undone.')) return;
+    try {
+      await api.deleteMeeting(id);
+      const filtered = meetings.filter(m => m.id !== id);
+      setMeetings(filtered);
+      cachedMeetings = filtered;
+    } catch (err: any) {
+      alert(`Failed to delete meeting: ${err.message}`);
     }
   };
 
@@ -227,13 +246,22 @@ export default function LandingPage() {
                     <div
                       key={meeting.id}
                       onClick={() => router.push(`/meetings/new?id=${meeting.id}`)}
-                      className="p-3 bg-card border border-cardBorder rounded-lg hover:border-indigo-500/50 cursor-pointer transition-all duration-200"
+                      className="p-3 bg-card border border-cardBorder rounded-lg hover:border-indigo-500/50 cursor-pointer transition-all duration-200 flex justify-between items-start group"
                     >
-                      <h5 className="font-bold text-sm text-foreground truncate">{meeting.title}</h5>
-                      <p className="text-xxs text-slate-500 dark:text-slate-400 mt-1">
-                        {new Date(meeting.created_at).toLocaleDateString()} &bull;{' '}
-                        <span className="capitalize">{meeting.status}</span>
-                      </p>
+                      <div className="overflow-hidden mr-2">
+                        <h5 className="font-bold text-sm text-foreground truncate">{meeting.title}</h5>
+                        <p className="text-xxs text-slate-500 dark:text-slate-400 mt-1">
+                          {new Date(meeting.created_at).toLocaleDateString()} &bull;{' '}
+                          <span className="capitalize">{meeting.status}</span>
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => handleDeleteMeeting(meeting.id, e)}
+                        className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors p-1.5 rounded-md shrink-0 flex items-center justify-center"
+                        title="Delete Session"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      </button>
                     </div>
                   ))
                 )}
