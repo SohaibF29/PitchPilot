@@ -14,13 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python builder tool and copy definitions
-RUN pip install --no-cache-dir hatchling
-
-COPY pyproject.toml .
+COPY requirements.txt .
 
 # Install dependencies into separate cacheable virtual environment
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Final minimal image
 FROM python:3.11-slim
