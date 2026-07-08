@@ -78,26 +78,29 @@ class MeetingService:
             # If no API key is available, we can't clarify right now, just return not ambiguous
             return {"is_ambiguous": False, "questions": []}
 
-        llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, temperature=0)
-        parser = PydanticOutputParser(pydantic_object=ClarificationResult)
+        llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, temperature=0).with_structured_output(ClarificationResult)
         
         prompt = PromptTemplate(
-            template="""You are an expert startup advisor and a highly practical, skeptical but respectful venture capitalist. 
-Read the following startup pitch. Do not take everything optimistically. Grill the user on the practicality of their approach.
-Analyze the pitch to identify the biggest missing crucial contexts or fundamental flaws required for a boardroom to analyze it properly.
-Generate 1-3 highly specific, dynamic questions tailored to this exact pitch. For example, if they don't specify a revenue model, ask about it. If their technology seems impractical, ask how they will build it. 
-Do not ask generic questions; reference their specific product, name, and claims.
-If the pitch is completely detailed and highly practical, mark is_ambiguous as false. Otherwise, mark is_ambiguous as true and provide the grilling questions.
+            template="""You are an initial screener for a startup pitch boardroom.
+Your job is ONLY to identify CRITICALLY missing context so the boardroom agents have enough information to start their deep analysis. 
+
+For context, the following specialized agents will review this pitch later:
+1. Market Analyst: Evaluates market size, competitors, and trends.
+2. Product Manager: Evaluates the MVP scope, roadmap, and user acquisition.
+3. Finance Advisor: Evaluates unit economics, revenue model, and capital requirements.
+4. Technical Architect: Evaluates tech stack feasibility, architecture, and security.
+
+DO NOT ask deep analytical or "grilling" questions (e.g., specific methodologies, complex revenue strategy details, long-term roadmaps, or validation processes) because these specialized Boardroom Agents will do that later.
+DO NOT use a rigid checklist. Only mark as ambiguous if the pitch is so vague that it's impossible to understand what the product actually does, who it's for, or how it makes money.
+If the pitch provides even a high-level overview of the idea, assume it is sufficient and mark is_ambiguous as false.
+If it is truly incomprehensible or missing the most basic premise, mark is_ambiguous as true and ask 1-2 highly specific clarifying questions based ONLY on what is completely missing.
 
 Title: {title}
-Pitch: {pitch}
-
-{format_instructions}""",
+Pitch: {pitch}""",
             input_variables=["title", "pitch"],
-            partial_variables={"format_instructions": parser.get_format_instructions()},
         )
         
-        chain = prompt | llm | parser
+        chain = prompt | llm
         try:
             result = await chain.ainvoke({"title": title, "pitch": pitch_text})
             return {"is_ambiguous": result.is_ambiguous, "questions": result.questions}
@@ -105,6 +108,39 @@ Pitch: {pitch}
             logger.error("Failed to clarify pitch: %s", e)
             # Failsafe: return not ambiguous so user can proceed
             return {"is_ambiguous": False, "questions": []}
+
+    async def save_agent_output(self, meeting_or_id: Meeting | UUID, agent_name: str, content: str) -> Meeting:
+        """Save intermediate agent output to the database. Accepts loaded Meeting to avoid SELECT round-trip."""
+        if isinstance(meeting_or_id, UUID):
+            meeting = await self._meeting_repo.get_by_id(meeting_or_id)
+            if not meeting:
+                raise EntityNotFoundException("Meeting", str(meeting_or_id))
+        else:
+            meeting = meeting_or_id
+
+        meeting.status = MeetingStatus.IN_PROGRESS
+
+        agent_output = AgentOutput(
+            agent_name=agent_name,
+            content=content,
+        )
+        meeting.agent_outputs[agent_name] = agent_output
+
+        # Update transcript
+        existing_roles = [t.role for t in meeting.transcript]
+        if agent_name not in existing_roles:
+            meeting.transcript.append(
+                TranscriptEntry(
+                    role=agent_name,
+                    content=content,
+                )
+            )
+        else:
+            for entry in meeting.transcript:
+                if entry.role == agent_name:
+                    entry.content = content
+
+        return await self._meeting_repo.save(meeting)
 
     async def execute_boardroom(self, meeting_id: UUID) -> Meeting:
         """
@@ -156,13 +192,17 @@ Pitch: {pitch}
         # 3. Instantiate Graph and execute
         graph = create_boardroom_graph(self._checkpointer)
         
-    async def save_boardroom_results(self, meeting_id: UUID, final_state: dict, openai_key: str | None = None) -> Meeting:
+    async def save_boardroom_results(self, meeting_or_id: Meeting | UUID, final_state: dict, openai_key: str | None = None) -> Meeting:
         """
         Parse outputs from a completed graph state and update meeting status to COMPLETED.
+        Accepts loaded Meeting to avoid SELECT round-trip.
         """
-        meeting = await self._meeting_repo.get_by_id(meeting_id)
-        if not meeting:
-            raise EntityNotFoundException("Meeting", str(meeting_id))
+        if isinstance(meeting_or_id, UUID):
+            meeting = await self._meeting_repo.get_by_id(meeting_or_id)
+            if not meeting:
+                raise EntityNotFoundException("Meeting", str(meeting_or_id))
+        else:
+            meeting = meeting_or_id
 
         meeting.status = MeetingStatus.COMPLETED
         meeting.completed_at = datetime.utcnow()
@@ -217,7 +257,7 @@ Pitch: {pitch}
             completion_tokens=total_comp,
             total_latency_ms=total_latency,
             estimated_cost=estimated_cost,
-            agents_completed=5,
+            agents_completed=len(AGENT_EXECUTION_ORDER),
         )
 
         # Populate meeting transcript with structured summaries
@@ -253,5 +293,6 @@ Pitch: {pitch}
             "product_manager": "product_review",
             "finance_advisor": "financial_analysis",
             "technical_architect": "technical_review",
+            "moderator_review": "moderator_review",
         }
         return mapping.get(agent_name, "")

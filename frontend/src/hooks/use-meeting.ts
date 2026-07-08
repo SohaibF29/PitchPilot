@@ -108,6 +108,27 @@ export function useMeeting(meetingId?: string) {
           );
           break;
 
+        case 'meeting.interrupted':
+          setIsExecuting(false);
+          setActiveNode(null);
+          setStreamingNode(null);
+          setMeeting((prev) =>
+            prev ? { ...prev, status: 'interrupted' } : prev
+          );
+          break;
+
+        case 'meeting.restarted':
+          setIsExecuting(true);
+          setActiveNode(null);
+          setStreamingNode(null);
+          setTranscript([]);
+          setAgentOutputs({});
+          setCompletedNodes([]);
+          setMeeting((prev) =>
+            prev ? { ...prev, status: 'in_progress', agent_outputs: {}, transcript: [] } : prev
+          );
+          break;
+
         case 'meeting.error':
           setIsExecuting(false);
           setActiveNode(null);
@@ -153,6 +174,14 @@ export function useMeeting(meetingId?: string) {
     wsClientRef.current?.startExecution();
   };
 
+  const stopAnalysis = () => {
+    wsClientRef.current?.stopExecution();
+  };
+
+  const restartAnalysis = () => {
+    wsClientRef.current?.restartExecution();
+  };
+
   const sendSteering = (feedback: string): boolean => {
     return wsClientRef.current?.sendInterrupt(feedback) ?? false;
   };
@@ -168,6 +197,8 @@ export function useMeeting(meetingId?: string) {
     isExecuting,
     error,
     startAnalysis,
+    stopAnalysis,
+    restartAnalysis,
     sendSteering,
     wsClient: wsClientRef.current,
   };

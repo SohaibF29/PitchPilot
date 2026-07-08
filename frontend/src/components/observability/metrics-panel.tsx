@@ -29,7 +29,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({
   return (
     <Card className="space-y-6">
       <h3 className="text-foreground font-bold text-lg tracking-wide border-b border-slate-200 dark:border-gray-800 pb-3">
-        📊 Performance Diagnostics
+        Performance Diagnostics
       </h3>
 
       {/* Execution Node & Status */}

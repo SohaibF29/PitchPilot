@@ -49,13 +49,9 @@ def create_boardroom_graph(checkpointer: BaseCheckpointSaver | None = None) -> A
         if iters >= 2:
             return END
         
-        review = state.get("moderator_review", "{}")
-        try:
-            data = json.loads(review)
-            if data.get("decision") == "REVISE":
-                return "market_analyst"
-        except Exception:
-            pass
+        review = state.get("moderator_review", "")
+        if "DECISION: REVISE" in review.upper():
+            return "market_analyst"
         return END
 
     workflow.add_conditional_edges(

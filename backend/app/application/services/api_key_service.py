@@ -38,6 +38,24 @@ class ApiKeyService:
 
         return None
 
+    async def get_all_decrypted_keys(self, user_id: UUID) -> dict[str, str]:
+        """Fetch and decrypt all persistent and session API keys for a user in a single DB query."""
+        keys = {}
+        
+        # 1. Fetch persistent keys (1 round-trip)
+        db_keys = await self._key_repo.list_by_user(user_id)
+        for db_key in db_keys:
+            keys[db_key.provider] = encryptor.decrypt(db_key.encrypted_key)
+            
+        # 2. Check temporary session cache for overrides
+        for provider in ["openai", "tavily"]:
+            cache_key = f"session_key:{user_id}:{provider}"
+            cached_val = redis_cache.get(cache_key)
+            if cached_val:
+                keys[provider] = cached_val
+                
+        return keys
+
     async def save_persistent_key(self, user_id: UUID, provider: str, raw_key: str) -> UserApiKey:
         """Encrypt and persist an API key in the database."""
         if not raw_key:

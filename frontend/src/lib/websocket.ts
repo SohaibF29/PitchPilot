@@ -66,6 +66,22 @@ export class MeetingWSClient {
     return false;
   }
 
+  stopExecution(): boolean {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ action: 'stop' }));
+      return true;
+    }
+    return false;
+  }
+
+  restartExecution(): boolean {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ action: 'restart' }));
+      return true;
+    }
+    return false;
+  }
+
   disconnect(): void {
     if (this.ws) {
       this.ws.close();

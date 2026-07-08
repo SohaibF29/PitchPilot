@@ -1,20 +1,22 @@
 import React from 'react';
 import { motion } from 'motion/react';
 
+import { Mic, TrendingUp, Package, DollarSign, Wrench, Scale } from 'lucide-react';
+
 interface Agent {
   name: string;
   role: string;
-  avatar: string;
+  icon: React.ElementType;
   key: string;
 }
 
 const AGENTS: Agent[] = [
-  { name: 'Moderator', role: 'Agenda & Briefing', avatar: '🎙️', key: 'moderator' },
-  { name: 'Market Analyst', role: 'TAM/SAM/SOM & SWOT', avatar: '📈', key: 'market_analyst' },
-  { name: 'Product Manager', role: 'MVP & Roadmap', avatar: '📦', key: 'product_manager' },
-  { name: 'Finance Advisor', role: 'Unit Economics', avatar: '💰', key: 'finance_advisor' },
-  { name: 'Technical Architect', role: 'Tech Stack & Security', avatar: '🛠️', key: 'technical_architect' },
-  { name: 'Moderator Review', role: 'Critique & Iteration', avatar: '⚖️', key: 'moderator_review' },
+  { name: 'Moderator', role: 'Agenda & Briefing', icon: Mic, key: 'moderator' },
+  { name: 'Market Analyst', role: 'TAM/SAM/SOM & SWOT', icon: TrendingUp, key: 'market_analyst' },
+  { name: 'Product Manager', role: 'MVP & Roadmap', icon: Package, key: 'product_manager' },
+  { name: 'Finance Advisor', role: 'Unit Economics', icon: DollarSign, key: 'finance_advisor' },
+  { name: 'Technical Architect', role: 'Implementation & Feasibility', icon: Wrench, key: 'technical_architect' },
+  { name: 'Moderator Review', role: 'Critique & Iteration', icon: Scale, key: 'moderator_review' },
 ];
 
 interface AgentGridProps {
@@ -88,8 +90,8 @@ export const AgentGrid: React.FC<AgentGridProps> = ({
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
               )}
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl border-2 bg-slate-100 dark:bg-gray-900 ${ringColor} transition-all duration-300`}>
-                {agent.avatar}
+              <div className={`w-14 h-14 rounded-full flex items-center justify-center text-slate-700 dark:text-slate-300 border-2 bg-slate-100 dark:bg-gray-900 ${ringColor} transition-all duration-300`}>
+                <agent.icon size={24} />
               </div>
             </div>
 

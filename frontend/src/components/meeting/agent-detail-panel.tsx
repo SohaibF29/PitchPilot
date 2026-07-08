@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card } from '../ui/card';
 import { StreamingText } from '../ui/streaming-text';
+import ReactMarkdown from 'react-markdown';
 
 interface AgentDetailPanelProps {
   agentKey: string;
@@ -410,9 +411,9 @@ export const AgentDetailPanel: React.FC<AgentDetailPanelProps> = ({
               {content}
             </pre>
           ) : (
-            <div>
+            <div className="prose prose-sm dark:prose-invert prose-indigo max-w-none">
               {renderStructured() || (
-                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{content}</p>
+                <ReactMarkdown>{content}</ReactMarkdown>
               )}
             </div>
           )}

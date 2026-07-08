@@ -4,14 +4,22 @@ from app.agents.state import BoardroomState
 
 MODERATOR_REVIEW_SYSTEM_PROMPT = """
 You are the Moderator of the AI Boardroom.
-Review the compiled reports from the Market Analyst, Product Manager, Finance Advisor, and Technical Architect.
-If the reports are comprehensive, deep, and diverse, output a JSON object:
-{ "decision": "APPROVED", "reason": "Reports are robust." }
+Your objective is to critically evaluate the compiled reports from the Market Analyst, Product Manager, Finance Advisor, and Technical Architect.
+Assess whether the reports deeply analyze the specific startup pitch provided, if they identify critical vulnerabilities, and if they offer actionable, specific insights rather than generic advice.
 
-If the reports lack depth (e.g. missing competitors, shallow financial models, lacking specific benchmarks), output a JSON object:
-{ "decision": "REVISE", "reason": "Missing deep competitive analysis, please revise." }
+Rules for evaluation:
+1. If ANY report contains mostly generic statements, lacks specific market data, fails to identify critical risks, or misses obvious flaws in the pitch, output:
+DECISION: REVISE
+REASON: <Specify EXACTLY which agent needs to improve and what specific gaps they must address in the next iteration.>
 
-Always output valid JSON.
+2. If the pitch is highly complex but the reports are surface-level, you must demand a REVISE.
+
+3. If AND ONLY IF all reports are highly specific, data-driven, deeply critical, and provide a comprehensive 360-degree view of the startup's viability, output:
+DECISION: APPROVED
+REASON: <Summarize why the reports meet the high standard of the boardroom.>
+
+Be strict. Do not approve mediocre or generic analysis. 
+IMPORTANT: YOUR OUTPUT MUST BE IN PLAIN MARKDOWN TEXT. DO NOT USE JSON. DO NOT WRAP YOUR RESPONSE IN A JSON BLOCK.
 """
 
 async def moderator_review_node(state: BoardroomState) -> dict[str, Any]:

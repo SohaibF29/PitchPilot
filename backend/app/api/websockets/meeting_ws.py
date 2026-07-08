@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.agents.graph import create_boardroom_graph
-from app.core.constants import AGENT_EXECUTION_ORDER, WSEventType
+from app.core.constants import AGENT_EXECUTION_ORDER, WSEventType, MeetingStatus
 from app.core.logging import get_logger
 from app.api.routes.meetings import ANONYMOUS_USER_ID
 from app.infrastructure.database.connection import get_db_session
@@ -36,122 +36,149 @@ import asyncio
 async def run_boardroom_execution(
     websocket: WebSocket,
     meeting_id: str,
-    meeting_repo: MeetingRepository,
-    meeting_service: MeetingService,
-    api_key_service: ApiKeyService,
+    user_id: UUID,
     checkpointer: Any,
 ) -> None:
     """Helper task to run courtroom graph execution asynchronously."""
+    from app.infrastructure.database.connection import get_db_context
     try:
-        m_uuid = UUID(meeting_id)
-        meeting = await meeting_repo.get_by_id(m_uuid)
-        if not meeting:
-            await websocket.send_json({
-                "type": WSEventType.MEETING_ERROR,
-                "error": "Meeting not found.",
-            })
-            return
-
-        openai_key = await api_key_service.get_decrypted_key(meeting.user_id, "openai")
-        tavily_key = await api_key_service.get_decrypted_key(meeting.user_id, "tavily")
-
-        inputs = {
-            "pitch_text": meeting.pitch_text,
-            "user_id": str(meeting.user_id),
-            "meeting_id": str(meeting.id),
-            "openai_api_key": openai_key or "",
-            "tavily_api_key": tavily_key or "",
-            "model_name": "gpt-4o",
-            "execution_log": [],
-            "node_latencies": [],
-        }
-
-        config = {"configurable": {"thread_id": meeting.thread_id}}
-        graph = create_boardroom_graph(checkpointer)
-
-        await websocket.send_json({
-            "type": WSEventType.MEETING_STARTED,
-            "meeting_id": meeting_id,
-        })
-
-        # Send agent.started for the first agent (moderator)
-        await websocket.send_json({
-            "type": WSEventType.AGENT_STARTED,
-            "agent": "moderator",
-        })
-
-        async for chunk_type, chunk in graph.astream(
-            inputs, config=config, stream_mode=["updates", "messages"]
-        ):
-            if chunk_type == "messages":
-                msg, metadata = chunk
-                # We only want to stream intermediate messages like tool calls or chunks from active agents
-                agent = metadata.get("langgraph_node")
-                if agent and msg.content:
-                    await websocket.send_json({
-                        "type": "agent.message",
-                        "agent": agent,
-                        "content": msg.content,
-                    })
-                elif agent and getattr(msg, "tool_calls", None):
-                    # Broadcast tool call activity
-                    for tc in msg.tool_calls:
-                        await websocket.send_json({
-                            "type": "agent.activity",
-                            "agent": agent,
-                            "activity": f"Executing tool: {tc['name']}...",
-                        })
-                continue
-                
-            # Handle standard updates
-            for node_name, node_output in chunk.items():
-                state_key = _get_state_key(node_name)
-                if not state_key:
-                    continue
-
-                agent_output = node_output.get(state_key, "")
+        async with get_db_context() as db_session:
+            meeting_repo = MeetingRepository(db_session)
+            api_key_repo = ApiKeyRepository(db_session)
+            embedding_repo = EmbeddingRepository(db_session)
+            
+            api_key_service = ApiKeyService(api_key_repo)
+            search_service = SearchService(embedding_repo)
+            meeting_service = MeetingService(
+                meeting_repo=meeting_repo,
+                checkpointer=checkpointer,
+                search_service=search_service,
+                api_key_service=api_key_service,
+            )
+            m_uuid = UUID(meeting_id)
+            meeting = await meeting_repo.get_by_id(m_uuid)
+            if not meeting:
                 await websocket.send_json({
-                    "type": WSEventType.AGENT_COMPLETED,
-                    "agent": node_name,
-                    "content": agent_output,
+                    "type": WSEventType.MEETING_ERROR,
+                    "error": "Meeting not found.",
                 })
-
-                next_node = None
-                if node_name == "moderator":
-                    next_node = "market_analyst"
-                elif node_name == "market_analyst":
-                    next_node = "product_manager"
-                elif node_name == "product_manager":
-                    next_node = "finance_advisor"
-                elif node_name == "finance_advisor":
-                    next_node = "technical_architect"
-                elif node_name == "technical_architect":
-                    next_node = "moderator_review"
-                elif node_name == "moderator_review":
-                    try:
-                        rev_data = json.loads(agent_output)
-                        if rev_data.get("decision") == "REVISE":
-                            next_node = "market_analyst"
-                    except Exception:
-                        pass
-
-                if next_node:
+                return
+    
+            # Fetch both keys in a single DB query instead of two
+            user_keys = await api_key_service.get_all_decrypted_keys(meeting.user_id)
+            openai_key = user_keys.get("openai")
+            tavily_key = user_keys.get("tavily")
+    
+            inputs = {
+                "pitch_text": meeting.pitch_text,
+                "user_id": str(meeting.user_id),
+                "meeting_id": str(meeting.id),
+                "openai_api_key": openai_key or "",
+                "tavily_api_key": tavily_key or "",
+                "model_name": "gpt-4o",
+                "execution_log": [],
+                "node_latencies": [],
+            }
+    
+            config = {"configurable": {"thread_id": meeting.thread_id}}
+            graph = create_boardroom_graph(checkpointer)
+    
+            state_wrapper = await graph.aget_state(config)
+            # If thread has state, resume by passing None to graph.astream
+            graph_inputs = None if state_wrapper.values else inputs
+    
+            await websocket.send_json({
+                "type": WSEventType.MEETING_STARTED,
+                "meeting_id": meeting_id,
+            })
+    
+            # Determine the next node to start (works for both initial run and resume)
+            next_agent = "moderator"
+            for agent in AGENT_EXECUTION_ORDER:
+                if agent not in meeting.agent_outputs:
+                    next_agent = agent
+                    break
+    
+            await websocket.send_json({
+                "type": WSEventType.AGENT_STARTED,
+                "agent": next_agent,
+            })
+    
+            async for chunk_type, chunk in graph.astream(
+                graph_inputs, config=config, stream_mode=["updates", "messages"]
+            ):
+                if chunk_type == "messages":
+                    msg, metadata = chunk
+                    # We only want to stream intermediate messages like tool calls or chunks from active agents
+                    agent = metadata.get("langgraph_node")
+                    if agent and msg.content:
+                        await websocket.send_json({
+                            "type": "agent.message",
+                            "agent": agent,
+                            "content": msg.content,
+                        })
+                    elif agent and getattr(msg, "tool_calls", None):
+                        # Broadcast tool call activity
+                        for tc in msg.tool_calls:
+                            await websocket.send_json({
+                                "type": "agent.activity",
+                                "agent": agent,
+                                "activity": f"Executing tool: {tc['name']}...",
+                            })
+                    continue
+                    
+                # Handle standard updates
+                for node_name, node_output in chunk.items():
+                    state_key = _get_state_key(node_name)
+                    if not state_key:
+                        continue
+    
+                    agent_output = node_output.get(state_key, "")
+                    
+                    # Save incremental agent output to database immediately (passing loaded meeting directly)
+                    meeting = await meeting_service.save_agent_output(meeting, node_name, agent_output)
+                    await meeting_repo._session.commit()
+    
                     await websocket.send_json({
-                        "type": WSEventType.AGENT_STARTED,
-                        "agent": next_node,
+                        "type": WSEventType.AGENT_COMPLETED,
+                        "agent": node_name,
+                        "content": agent_output,
                     })
-
-        # Fetch the final computed state to persist
-        state_wrapper = await graph.aget_state(config)
-        final_state = state_wrapper.values
-        
-        # Persist and broadcast final metrics
-        completed_meeting = await meeting_service.save_boardroom_results(m_uuid, final_state, openai_key)
-        metrics = completed_meeting.metrics
-        await websocket.send_json({
-            "type": WSEventType.MEETING_COMPLETED,
-            "metrics": metrics.to_dict() if hasattr(metrics, "to_dict") else metrics,
-        })
+    
+                    next_node = None
+                    if node_name == "moderator":
+                        next_node = "market_analyst"
+                    elif node_name == "market_analyst":
+                        next_node = "product_manager"
+                    elif node_name == "product_manager":
+                        next_node = "finance_advisor"
+                    elif node_name == "finance_advisor":
+                        next_node = "technical_architect"
+                    elif node_name == "technical_architect":
+                        next_node = "moderator_review"
+                    elif node_name == "moderator_review":
+                        if "DECISION: REVISE" in agent_output.upper():
+                            next_node = "market_analyst"
+    
+                    if next_node:
+                        await websocket.send_json({
+                            "type": WSEventType.AGENT_STARTED,
+                            "agent": next_node,
+                        })
+    
+            # Fetch the final computed state to persist
+            state_wrapper = await graph.aget_state(config)
+            final_state = state_wrapper.values
+            
+            # Persist and broadcast final metrics (passing loaded meeting directly)
+            completed_meeting = await meeting_service.save_boardroom_results(meeting, final_state, openai_key)
+            await meeting_repo._session.commit() # Commit the transaction immediately so other endpoints see the COMPLETED status
+    
+            metrics = completed_meeting.metrics
+            await websocket.send_json({
+                "type": WSEventType.MEETING_COMPLETED,
+                "metrics": metrics.to_dict() if hasattr(metrics, "to_dict") else metrics,
+            })
     except Exception as e:
         logger.exception("Error in boardroom execution task: %s", e)
         try:
@@ -248,12 +275,64 @@ async def meeting_websocket(websocket: WebSocket, meeting_id: str, token: str | 
                             run_boardroom_execution(
                                 websocket=websocket,
                                 meeting_id=meeting_id,
-                                meeting_repo=meeting_repo,
-                                meeting_service=meeting_service,
-                                api_key_service=api_key_service,
+                                user_id=user_id,
                                 checkpointer=checkpointer,
                             )
                         )
+                elif event.get("action") == "stop":
+                    if execution_task and not execution_task.done():
+                        execution_task.cancel()
+                        # Update meeting status to INTERRUPTED
+                        m_uuid = UUID(meeting_id)
+                        meeting = await meeting_repo.get_by_id(m_uuid)
+                        if meeting:
+                            meeting.status = MeetingStatus.INTERRUPTED
+                            await meeting_repo.save(meeting)
+                            await meeting_repo._session.commit()
+                        
+                        await websocket.send_json({
+                            "type": "meeting.interrupted",
+                            "meeting_id": meeting_id
+                        })
+                elif event.get("action") == "restart":
+                    try:
+                        # Cancel existing task if running
+                        if execution_task and not execution_task.done():
+                            execution_task.cancel()
+
+                        # Generate new thread_id to wipe checkpoints in LangGraph
+                        import uuid
+                        new_thread_id = f"thread_{uuid.uuid4()}"
+
+                        m_uuid = UUID(meeting_id)
+                        meeting = await meeting_repo.get_by_id(m_uuid)
+                        if meeting:
+                            meeting.status = MeetingStatus.CREATED
+                            meeting.thread_id = new_thread_id
+                            meeting.agent_outputs = {}
+                            meeting.transcript = []
+                            if meeting.metrics:
+                                meeting.metrics.agents_completed = 0
+                            await meeting_repo.save(meeting)
+                            await meeting_repo._session.commit()
+
+                        # Broadcast reset to frontend
+                        await websocket.send_json({
+                            "type": "meeting.restarted",
+                            "meeting_id": meeting_id
+                        })
+
+                        # Start executing fresh
+                        execution_task = asyncio.create_task(
+                            run_boardroom_execution(
+                                websocket=websocket,
+                                meeting_id=meeting_id,
+                                user_id=user_id,
+                                checkpointer=checkpointer,
+                            )
+                        )
+                    except Exception as e:
+                        logger.error(f"Error during restart: {e}")
                 elif event.get("action") == "interrupt":
                     feedback = event.get("feedback", "")
                     m_uuid = UUID(meeting_id)
@@ -281,6 +360,17 @@ async def meeting_websocket(websocket: WebSocket, meeting_id: str, token: str | 
             logger.info("Text meeting WebSocket disconnected for meeting %s", meeting_id)
             if execution_task and not execution_task.done():
                 execution_task.cancel()
+            
+            # Save meeting status as interrupted on disconnect if still in progress
+            try:
+                m_uuid = UUID(meeting_id)
+                meeting = await meeting_repo.get_by_id(m_uuid)
+                if meeting and meeting.status == MeetingStatus.IN_PROGRESS:
+                    meeting.status = MeetingStatus.INTERRUPTED
+                    await meeting_repo.save(meeting)
+                    await meeting_repo._session.commit()
+            except Exception:
+                pass
             break
         except Exception as e:
             logger.exception("Error in text meeting WebSocket event loop: %s", e)

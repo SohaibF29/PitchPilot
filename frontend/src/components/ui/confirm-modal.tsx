@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './button';
 
@@ -25,16 +26,24 @@ export function ConfirmModal({
   isLoading,
   isAlert = false
 }: ConfirmModalProps) {
-  return (
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
+  const modalContent = (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-900/20 dark:bg-slate-950/60 backdrop-blur-sm"
             onClick={isLoading || isAlert ? undefined : onCancel}
           />
           <motion.div
@@ -42,7 +51,7 @@ export function ConfirmModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
-            className="relative z-10 w-full max-w-sm rounded-xl bg-card border border-cardBorder p-6 shadow-2xl"
+            className="relative z-10 w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 border border-cardBorder p-6 shadow-2xl"
           >
             <h3 className="text-lg font-bold text-foreground mb-2">{title}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
@@ -67,4 +76,6 @@ export function ConfirmModal({
       )}
     </AnimatePresence>
   );
+
+  return createPortal(modalContent, document.body);
 }

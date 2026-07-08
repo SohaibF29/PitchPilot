@@ -47,76 +47,7 @@ class ReportService:
         self._report_repo = report_repo
         self._api_key_service = api_key_service
 
-    async def _generate_stats_visual(self, meeting: Any, openai_key: str) -> str | None:
-        """
-        Extracts stats from meeting reports and generates an infographic using DALL-E 3.
-        Saves the file locally and returns the local absolute filepath.
-        """
-        try:
-            reports_text = ""
-            for role, out in meeting.agent_outputs.items():
-                reports_text += f"[{role}]: {out.content}\n\n"
 
-            prompt_extraction = (
-                "Based on the following boardroom reports, identify the key statistics, percentages, and metrics. "
-                "Write a highly descriptive, professional prompt for DALL-E 3 to generate a clean, modern corporate infographic "
-                "or business illustration showing these stats. The prompt must request a dark blue/indigo color palette matching "
-                "a premium SaaS tool, with clear visual structures and no gibberish text or labels. "
-                "Return ONLY the DALL-E 3 prompt string, nothing else."
-            )
-
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import SystemMessage
-
-            llm = ChatOpenAI(
-                model="gpt-4o",
-                openai_api_key=openai_key,
-                temperature=0.7,
-            )
-
-            res = await llm.ainvoke([
-                SystemMessage(content=prompt_extraction),
-                ("user", f"Boardroom Reports:\n{reports_text}"),
-            ])
-
-            dalle_prompt = res.content.strip()
-            logger.info("Generated DALL-E prompt for statistics: %s", dalle_prompt)
-
-            client = AsyncOpenAI(api_key=openai_key)
-            dalle_res = await client.images.generate(
-                model="gpt-image-1",
-                prompt=dalle_prompt,
-                n=1,
-                size="1024x1024",
-                quality="low",
-            )
-
-            image_data = dalle_res.data[0]
-            
-            storage_dir = os.path.join(os.getcwd(), "public", "reports", "charts")
-            os.makedirs(storage_dir, exist_ok=True)
-
-            filename = f"chart_{meeting.id}.png"
-            filepath = os.path.join(storage_dir, filename)
-
-            # gpt-image-1 returns base64 by default; dall-e returns url
-            if hasattr(image_data, 'b64_json') and image_data.b64_json:
-                import base64
-                img_bytes = base64.b64decode(image_data.b64_json)
-                with open(filepath, "wb") as f:
-                    f.write(img_bytes)
-                return filepath
-            elif hasattr(image_data, 'url') and image_data.url:
-                async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    img_resp = await http_client.get(image_data.url)
-                    if img_resp.status_code == 200:
-                        with open(filepath, "wb") as f:
-                            f.write(img_resp.content)
-                        return filepath
-
-        except Exception as e:
-            logger.exception("Failed to generate DALL-E visual for meeting %s: %s", meeting.id, e)
-            return None
 
     async def generate_pdf_report(self, meeting_id: UUID) -> Report:
         """
@@ -134,16 +65,7 @@ class ReportService:
         if existing_report and existing_report.pdf_url:
             return existing_report
 
-        # 1. Resolve API Keys for DALL-E Visual Generation
-        openai_key = None
-        if self._api_key_service and meeting.user_id:
-            openai_key = await self._api_key_service.get_decrypted_key(meeting.user_id, "openai")
-        if not openai_key:
-            openai_key = settings.openai_api_key.get_secret_value()
 
-        chart_path = None
-        if openai_key:
-            chart_path = await self._generate_stats_visual(meeting, openai_key)
 
         # 2. Map agent outputs to report sections
         sections = {}
@@ -166,11 +88,9 @@ class ReportService:
             fallback_env = Environment(loader=fallback_loader)
             template = fallback_env.get_template("report.html")
 
-        # Pass the absolute chart_path to make sure xhtml2pdf can read the image locally
         html_content = template.render(
             meeting=meeting,
             sections=sections,
-            chart_path=chart_path,
             generated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
@@ -202,29 +122,39 @@ class ReportService:
             logger.error("xhtml2pdf PDF compilation failed for meeting %s: %s", meeting_id, e)
             raise InvalidRequestException(f"PDF generation failed: {e}")
 
+    def _format_content(self, content: str) -> str:
+        """Parse markdown string content and format it to HTML for PDF generation."""
+        import markdown
+        try:
+            return markdown.markdown(content)
+        except Exception:
+            return content.replace("\n", "<br/>")
+
     def _resolve_section_content(self, meeting: Any, section: str) -> str:
         """Map generic report sections to specific agent output sections."""
         outputs = meeting.agent_outputs
         
         # Simple extraction rules based on agent specializations
+        content = ""
         if section == "executive_summary":
-            return outputs.get("moderator").content if "moderator" in outputs else meeting.pitch_text
+            content = outputs.get("moderator").content if "moderator" in outputs else meeting.pitch_text
         elif section == "market_analysis":
-            return outputs.get("market_analyst").content if "market_analyst" in outputs else "Pending analyst review."
+            content = outputs.get("market_analyst").content if "market_analyst" in outputs else "Pending analyst review."
         elif section == "mvp_recommendation":
-            return outputs.get("product_manager").content if "product_manager" in outputs else "Pending PM review."
+            content = outputs.get("product_manager").content if "product_manager" in outputs else "Pending PM review."
         elif section == "revenue_model":
-            return outputs.get("finance_advisor").content if "finance_advisor" in outputs else "Pending financial review."
+            content = outputs.get("finance_advisor").content if "finance_advisor" in outputs else "Pending financial review."
         elif section == "technical_review":
-            return outputs.get("technical_architect").content if "technical_architect" in outputs else "Pending technical architect review."
+            content = outputs.get("technical_architect").content if "technical_architect" in outputs else "Pending technical architect review."
         elif section == "final_recommendation":
             # Combine moderator final remarks
-            return outputs.get("moderator").content if "moderator" in outputs else "No recommendation available."
-        
-        # Fallback to general outputs
-        combined = []
-        for name, output in outputs.items():
-            if section in output.content.lower():
-                combined.append(output.content)
-        
-        return "\n\n".join(combined) if combined else f"Review in-progress by the boardroom."
+            content = outputs.get("moderator").content if "moderator" in outputs else "No recommendation available."
+        else:
+            # Fallback to general outputs
+            combined = []
+            for name, output in outputs.items():
+                if section in output.content.lower():
+                    combined.append(output.content)
+            content = "\n\n".join(combined) if combined else f"Review in-progress by the boardroom."
+            
+        return self._format_content(content)

@@ -7,11 +7,12 @@ import { useMeeting } from '@/hooks/use-meeting';
 import { AgentGrid } from '@/components/meeting/agent-grid';
 import { AgentDetailPanel } from '@/components/meeting/agent-detail-panel';
 import { MetricsPanel } from '@/components/observability/metrics-panel';
-import { GraphVisualizer } from '@/components/observability/graph-visualizer';
 import { api } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
+import { Trash2, StopCircle, Play, RefreshCw, Download, FileText, Send, MessageSquare } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -58,7 +59,10 @@ const TranscriptBubble: React.FC<{
     else if (parsed.feedback) preview = parsed.feedback;
     else preview = cleanContent.slice(0, 200) + (cleanContent.length > 200 ? '…' : '');
   } catch {
-    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    let cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    if (cleanContent.startsWith('{')) {
+      cleanContent = cleanContent.replace(/[{}[\]"]/g, '').replace(/[a-zA-Z_]+:/g, '').trim();
+    }
     preview = cleanContent.slice(0, 200) + (cleanContent.length > 200 ? '…' : '');
   }
 
@@ -113,6 +117,7 @@ function MeetingDashboardContent() {
   
   const [modalConfig, setModalConfig] = useState<{ isOpen: boolean; title: string; description: string; isAlert: boolean; onConfirm: () => void } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
@@ -125,8 +130,10 @@ function MeetingDashboardContent() {
     agentActivities,
     streamingNode,
     isExecuting,
-    error,
+    error: hookError,
     startAnalysis,
+    stopAnalysis,
+    restartAnalysis,
     sendSteering,
   } = useMeeting(meetingId);
 
@@ -151,16 +158,42 @@ function MeetingDashboardContent() {
     try {
       await api.generateReport(meetingId);
       setReportReady(true);
-      setError(null);
+      setReportError(null);
     } catch (err: any) {
-      setError(`Failed to generate report: ${err.message}`);
+      setReportError(`Failed to generate report: ${err.message}`);
     } finally {
       setIsGeneratingReport(false);
     }
   };
 
-  const handleDownloadPDF = () => {
-    window.open(`${API_BASE}/api/reports/${meetingId}/download`, '_blank');
+  const handleDownloadPDF = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token || '';
+      
+      const response = await fetch(`${API_BASE}/api/reports/${meetingId}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PitchPilot_Report_${meetingId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Failed to download the report.');
+    }
   };
 
   const confirmDeleteMeeting = () => {
@@ -242,36 +275,59 @@ function MeetingDashboardContent() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={confirmDeleteMeeting} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 gap-2 border-red-200 dark:border-red-900/50">
-            🗑️ Delete Session
+          <Button variant="danger" onClick={confirmDeleteMeeting} className="gap-2">
+            <Trash2 size={16} /> Delete Session
           </Button>
+          
+          {/* Active execution control */}
+          {isExecuting && (
+            <Button variant="warning" onClick={stopAnalysis} className="gap-2">
+              <StopCircle size={16} /> Stop Analysis
+            </Button>
+          )}
+
+          {/* Stopped / Interrupted control */}
+          {!isExecuting && !isCompleted && (
+            <>
+              <Button variant="primary" onClick={startAnalysis} className="gap-2">
+                <Play size={16} /> Resume Analysis
+              </Button>
+              <Button variant="secondary" onClick={restartAnalysis} className="gap-2">
+                <RefreshCw size={16} /> Restart Boardroom
+              </Button>
+            </>
+          )}
+
           {isCompleted && (
             <>
               {isGeneratingReport && (
                 <Button variant="secondary" disabled className="gap-2">
-                  <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   Generating AI Report…
                 </Button>
               )}
               {reportReady && (
                 <Button variant="primary" onClick={handleDownloadPDF} className="gap-2">
-                  📥 Download PDF Report
+                  <Download size={16} /> Download PDF Report
                 </Button>
               )}
               {!reportReady && !isGeneratingReport && (
                 <Button variant="secondary" onClick={handleGenerateReport} className="gap-2">
-                  📊 Compile Report
+                  <FileText size={16} /> Compile Report
                 </Button>
               )}
+              <Button variant="secondary" onClick={restartAnalysis} className="gap-2">
+                <RefreshCw size={16} /> Re-run Analysis
+              </Button>
             </>
           )}
         </div>
       </div>
 
       {/* ── Error banner ── */}
-      {error && (
-        <div className="bg-red-950/20 border border-red-900/35 text-red-400 p-3 rounded-xl text-sm">
-          ⚠️ {error}
+      {(hookError || reportError) && (
+        <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/35 text-red-700 dark:text-red-400 p-3 rounded-xl text-sm font-medium">
+          ⚠️ {hookError || reportError}
         </div>
       )}
 
@@ -282,11 +338,14 @@ function MeetingDashboardContent() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="bg-emerald-950/20 border border-emerald-900/35 text-emerald-400 p-3 rounded-xl text-sm flex items-center justify-between"
+            className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/35 text-emerald-800 dark:text-emerald-400 p-3 rounded-xl text-sm flex items-center justify-between font-medium"
           >
-            <span>✅ AI-powered report with DALL·E infographic generated successfully!</span>
-            <Button variant="primary" onClick={handleDownloadPDF} className="text-xs py-1.5 px-3">
-              📥 Download
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-600 dark:text-emerald-500">✅</span> 
+              <span>AI-powered report generated successfully!</span>
+            </div>
+            <Button variant="primary" onClick={handleDownloadPDF} className="text-xs py-1.5 px-3 gap-2">
+              <Download size={14} /> Download
             </Button>
           </motion.div>
         )}
@@ -347,8 +406,8 @@ function MeetingDashboardContent() {
                   >
                     {transcript.length === 0 && !isExecuting ? (
                       <div className="h-64 flex flex-col items-center justify-center text-center text-slate-400">
-                        <span className="text-4xl mb-3">💬</span>
-                        <p className="text-sm">The boardroom is assembling…</p>
+                        <MessageSquare className="w-10 h-10 mb-3 opacity-50" />
+                        <p className="text-sm font-medium">Waiting to start...</p>
                       </div>
                     ) : (
                       <>
@@ -405,52 +464,15 @@ function MeetingDashboardContent() {
                       </>
                     )}
                   </div>
-
-                  {/* Start Analysis button (if not yet started) */}
-                  {meeting?.status === 'created' && (
-                    <div className="pt-3 border-t border-slate-200/50 dark:border-gray-800/50">
-                      <Button onClick={startAnalysis} disabled={isExecuting} className="w-full py-3 text-base gap-2">
-                        {isExecuting ? (
-                          <>
-                            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                            Courtroom Deliberating…
-                          </>
-                        ) : (
-                          '🚀 Start Boardroom Analysis'
-                        )}
-                      </Button>
-                    </div>
-                  )}
                 </Card>
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-
-        {/* ── Right panel: Metrics + Steering ── */}
-        <div className="space-y-5">
-          <MetricsPanel
-            metrics={
-              meeting?.metrics || {
-                total_tokens: 0,
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_latency_ms: 0,
-                estimated_cost: 0.0,
-                total_retries: 0,
-                model: 'gpt-4o',
-                agents_completed: completedNodes.length,
-                agents_total: 6,
-              }
-            }
-            currentNode={activeNode}
-            retryCount={0}
-          />
 
           {/* ── Steer Boardroom ── */}
           <Card>
             <CardTitle className="text-sm mb-3">
-              ✍️ Steer the Boardroom
+              Steer the Boardroom
             </CardTitle>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
               Send a directive to the active agents. They will incorporate your feedback into their ongoing analysis.
@@ -472,17 +494,35 @@ function MeetingDashboardContent() {
                 variant="primary"
                 onClick={handleSteering}
                 disabled={!isExecuting || !steeringInput.trim()}
-                className="text-xs py-1.5 px-3"
+                className="text-xs py-1.5 px-3 gap-2"
               >
-                {steeringSent ? '✅ Sent!' : '→ Steer'}
+                {steeringSent ? '✅ Sent!' : <><Send size={14}/> Steer</>}
               </Button>
             </div>
           </Card>
         </div>
-      </div>
 
-      {/* ── Graph Visualizer Footer ── */}
-      <GraphVisualizer activeNode={activeNode} completedNodes={completedNodes} />
+        {/* ── Right panel: Metrics + Steering ── */}
+        <div className="space-y-5 flex flex-col">
+          <MetricsPanel
+            metrics={
+              meeting?.metrics || {
+                total_tokens: 0,
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_latency_ms: 0,
+                estimated_cost: 0.0,
+                total_retries: 0,
+                model: 'gpt-4o',
+                agents_completed: completedNodes.length,
+                agents_total: 6,
+              }
+            }
+            currentNode={activeNode}
+            retryCount={0}
+          />
+        </div>
+      </div>
     </div>
   );
 }

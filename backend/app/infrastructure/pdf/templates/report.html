@@ -144,7 +144,7 @@
     <!-- Executive Summary -->
     <h2>Executive Summary</h2>
     <div class="section-box">
-        <p>{{ sections.executive_summary }}</p>
+        <div>{{ sections.executive_summary | safe }}</div>
     </div>
 
     <!-- Market Infographic / Statistics Visual -->
@@ -182,24 +182,24 @@
 
     <!-- Market Analysis -->
     <h2>Market Analysis & Opportunity</h2>
-    <p>{{ sections.market_analysis }}</p>
+    <div>{{ sections.market_analysis | safe }}</div>
 
     <!-- MVP & Roadmap -->
     <h2>Product & MVP Roadmap</h2>
-    <p>{{ sections.mvp_recommendation }}</p>
+    <div>{{ sections.mvp_recommendation | safe }}</div>
 
     <!-- Revenue & Financials -->
     <h2>Revenue Model & Financial Review</h2>
-    <p>{{ sections.revenue_model }}</p>
+    <div>{{ sections.revenue_model | safe }}</div>
 
     <!-- Technical Review -->
     <h2>Technical & Architecture Review</h2>
-    <p>{{ sections.technical_review }}</p>
+    <div>{{ sections.technical_review | safe }}</div>
 
     <!-- Overall Assessment -->
     <h2>Boardroom Final Recommendation</h2>
     <div class="section-box" style="border-left-color: #2F855A; background-color: #F0FFF4;">
-        <p><strong>Final Verdict:</strong> {{ sections.final_recommendation }}</p>
+        <div><strong>Final Verdict:</strong> {{ sections.final_recommendation | safe }}</div>
     </div>
 
     <!-- Diagnostics -->
