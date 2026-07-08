@@ -46,7 +46,7 @@ if (supabaseUrl === 'https://dummy.supabase.co') {
   supabase.auth.getSession = async () => {
     return { data: { session: getMockSession() }, error: null } as any;
   };
-  supabase.auth.onAuthStateChange = (callback) => {
+  supabase.auth.onAuthStateChange = (callback: any) => {
     listeners.push(callback);
     setTimeout(() => callback('INITIAL_SESSION', getMockSession()), 10);
     return { 
